@@ -40,9 +40,9 @@ function cavecmd() {
         depsdepth=""
         subcommand="${1} "
         nosuggestions=""
-        CAVEBUILDLOG="$(mktemp /tmp/paludis-${ARCH}-XXXXXXXXX-build.log)"
-        chown ${RUNAS} ${CAVEBUILDLOG}
-        trail=" -Cs -Rr &> ${CAVEBUILDLOG} &"
+        CAVEBUILDLOG="/tmp/fixed-example-paludis-build.log"
+        ${DRYRUN} || CAVEBUILDLOG="$(mktemp /tmp/paludis-${ARCH}-XXXXXXXXX-build.log)"
+        trail=" -Cs -Rr"
     else
         if [ -n "${SKIPIDS}" ]; then
             without="-W ${SKIPIDS} -I ${SKIPIDS} "

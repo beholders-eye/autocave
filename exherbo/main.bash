@@ -1,4 +1,3 @@
-#/usr/bin/pkexec /usr/bin/bash
 #!/usr/bin/bash
 
 source ${HERE}/exherbo/commands.lib.bash
@@ -7,6 +6,8 @@ function sync() {
     cavecmd "sync"
 
     echo "${CAVECMD}"
+    ${DRYRUN} && return
+
     ${CAVECMD}
 }
 
@@ -14,6 +15,8 @@ function searchidx() {
     cavecmd "searchidx"
 
     echo "${CAVECMD}"
+    ${DRYRUN} && return
+
     ${CAVECMD}
 }
 
@@ -21,7 +24,9 @@ function resolve() {
     cavecmd
 
     echo "${CAVECMD}"
-    su - $RUNAS -c ${CAVECMD}
+    ${DRYRUN} && return
+
+    su -c "${CAVECMD}" - ${RUNAS}
 }
 
 function cleanup() {
@@ -33,13 +38,16 @@ function cleanup() {
 function resume() {
     cavecmd "resume"
 
+    echo "${CAVECMD} &> ${CAVEBUILDLOG} &"
+    ${DRYRUN} && return
+
     local spinner=false
     if ! $VERBOSE; then
         spinner=true
     fi
 
-    echo "${CAVECMD}"
-    ${CAVECMD}
+    chmod go+r ${CAVEBUILDLOG}
+    ${CAVECMD} &> ${CAVEBUILDLOG} &
     PID=$!
     trap "cleanup" INT TERM EXIT
 
@@ -48,40 +56,44 @@ function resume() {
     echo -n ' '
     while [ -d /proc/$PID ]
     do
-        local relevantline=$(tail -n 1 ${CAVEBUILDLOG} | grep '[0-9]\+ of [0-9]\+')
+        local relevantline=$(tail -n 1 ${CAVEBUILDLOG} | grep '^[0-9]\+ of [0-9]\+:' | sed -e 's/\n//')
+        if $(echo ${relevantline} | fgrep -q "Starting install to"); then
+            local packagebit=$(echo ${relevantline} | awk '{print $1 " of " $3 " " $9}')
+            relevantline="${packagebit} -- build"
+        elif $(echo ${relevantline} | fgrep -q "Starting fetch for"); then
+            local packagebit=$(echo ${relevantline} | awk '{print $1 " of " $3 " " $8}')
+            relevantline="${packagebit} -- fetch"
+        fi
         printf "\b${sp:i++%${#sp}:1}"
         if [ -n "${relevantline}" ]; then
             printf "\b$relevantline\n"
             echo -n ' '
-            unset relevantline
+            unset relevantline packagebit
         fi
     done
 }
 
 # Dry run
 if ! ${DRYRUN}; then
-    # Let's do this
-    if ${SYNC}; then
-        sync
+    # Check if we are root
+    if [ ${UID} -ne 0 ]; then
+        echo "Should be root to run cave sync|manage-search-index|resume"
+        exit 1
     fi
-    if ${SEARCHIDX}; then
-        searchidx
-    fi
-    resolve
-    resume
+
 else
-    echo "DRYRUN=${DRYRUN}, so won't execute anything, just show off:"
-    cavecmd
-    echo -e "Resolve command:\n${CAVECMD}"
-
-    cavecmd "resume"
-    echo -e "Resume command:\n${CAVECMD}"
-
-    cavecmd "sync"
-    echo -e "Sync command:\n${CAVECMD}"
-
-    cavecmd "searchidx"
-    echo -e "Search Index command:\n${CAVECMD}"
-
-    rm -vf ${CAVEBUILDLOG}
+    echo "Won't execute anything, just show off"
 fi
+
+# Let's do this
+if ${SYNC}; then
+    sync
+fi
+if ${SEARCHIDX}; then
+    searchidx
+fi
+if ! ${RESUMEONLY}; then
+    resolve
+fi
+
+resume
